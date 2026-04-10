@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agenda de Serviços — ProFeed</title>
+  <title>Agenda de Serviços — Resolve Aqui</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <link rel="stylesheet" href="agenda.css" />
 </head>
@@ -143,8 +143,7 @@
 </div>
 
 <script>
-  /* ---- Static event data ---- */
-  const EVENTS = [
+  const STATIC_EVENTS = [
     { id: 1, title: "Reforma Elétrica",       client: "João Carlos",  date: "2024-07-08", time: "08:00", duration: "03:00", desc: "Revisão completa da fiação da residência, troca de tomadas e quadro de disjuntores.", level: "dificil",  color: "#e74c3c" },
     { id: 2, title: "Instalação de Tomadas",  client: "Fátima Soito", date: "2024-07-10", time: "14:00", duration: "01:30", desc: "Instalação de 6 tomadas no escritório no novo padrão ABNT.", level: "facil",    color: "#27ae60" },
     { id: 3, title: "Inspeção Geral",         client: "Davi Alves",   date: "2024-07-15", time: "09:00", duration: "02:00", desc: "Vistoria técnica para adequação do imóvel ao laudo de segurança elétrica.", level: "medio",   color: "#f39c12" },
@@ -156,12 +155,47 @@
   const LEVEL_LABELS = { facil: "Fácil", medio: "Médio", dificil: "Difícil" };
   const LEVEL_COLORS = { facil: "#27ae60", medio: "#f39c12", dificil: "#e74c3c" };
 
-  let currentYear = 2024, currentMonth = 6; // July 2024 (0-indexed)
+  const AGENDA_KEY    = 'profeed_agenda_events';
+  const COMPLETED_KEY = 'profeed_completed_services';
+
+  function loadEvents() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(AGENDA_KEY));
+      if (saved && saved.length) return saved;
+    } catch(e) {}
+    const events = STATIC_EVENTS.map(e => ({ ...e, color: LEVEL_COLORS[e.level] }));
+    saveEvents(events);
+    return events;
+  }
+
+  function saveEvents(arr) {
+    localStorage.setItem(AGENDA_KEY, JSON.stringify(arr));
+  }
+
+  function syncCompleted(events) {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    let completed = [];
+    try { completed = JSON.parse(localStorage.getItem(COMPLETED_KEY)) || []; } catch(e) {}
+    const existingIds = new Set(completed.map(c => c.id));
+    events.forEach(ev => {
+      const evDate = new Date(ev.date);
+      if (evDate < today && !existingIds.has(ev.id)) {
+        completed.push({ ...ev, completedAt: ev.date });
+        existingIds.add(ev.id);
+      }
+    });
+    localStorage.setItem(COMPLETED_KEY, JSON.stringify(completed));
+  }
+
+  let EVENTS = loadEvents();
+  syncCompleted(EVENTS);
+
+  let currentYear = 2024, currentMonth = 6;
   let selectedLevel = "facil";
 
   const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
-  /* ---- Calendar ---- */
   function renderCalendar() {
     const label = document.getElementById('month-label');
     label.textContent = `${MONTHS_PT[currentMonth].toUpperCase()} ${currentYear}`;
@@ -171,7 +205,7 @@
 
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const startOffset = (firstDay === 0) ? 6 : firstDay - 1; // Monday start
+    const startOffset = (firstDay === 0) ? 6 : firstDay - 1;
 
     for (let i = 0; i < startOffset; i++) {
       const empty = document.createElement('div');
@@ -212,19 +246,21 @@
     renderCalendar();
   });
 
-  /* ---- Events List ---- */
   function renderEventsList() {
     const list = document.getElementById('events-list');
     list.innerHTML = '';
 
     const sorted = [...EVENTS].sort((a,b) => a.date.localeCompare(b.date));
     sorted.forEach(ev => {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const evDate = new Date(ev.date);
+      const isPast = evDate < today;
       const item = document.createElement('div');
-      item.className = 'event-item';
+      item.className = 'event-item' + (isPast ? ' past-event' : '');
       item.innerHTML = `
         <div class="event-item-color" style="background:${LEVEL_COLORS[ev.level]}"></div>
         <div class="event-item-info">
-          <div class="event-item-title">${ev.title}</div>
+          <div class="event-item-title">${ev.title}${isPast ? ' <span class="done-tag">Concluído</span>' : ''}</div>
           <div class="event-item-meta">
             <span><i class="fa-solid fa-user-tie"></i> ${ev.client}</span>
             <span><i class="fa-solid fa-calendar-day"></i> ${formatDate(ev.date)}</span>
@@ -243,7 +279,6 @@
     return `${d}/${m}/${y}`;
   }
 
-  /* ---- Modal ---- */
   function openModal(ev) {
     document.getElementById('modal-level').textContent = LEVEL_LABELS[ev.level];
     document.getElementById('modal-level').style.background = LEVEL_COLORS[ev.level];
@@ -263,7 +298,6 @@
       document.getElementById('modal-overlay').classList.remove('active');
   });
 
-  /* ---- Form ---- */
   const formBody = document.getElementById('form-body');
 
   document.getElementById('open-form-btn').addEventListener('click', () => {
@@ -281,7 +315,6 @@
     });
   });
 
-  // Auto-calc end time
   function calcEnd() {
     const t = document.getElementById('f-time').value;
     const dur = document.getElementById('f-duration').value;
@@ -308,21 +341,23 @@
       alert('Preencha título, cliente, data e horário.'); return;
     }
 
-    EVENTS.push({
+    const newEvent = {
       id: Date.now(), title, client, date, time,
       duration: dur || '01:00', desc, level: selectedLevel,
       color: LEVEL_COLORS[selectedLevel]
-    });
+    };
+
+    EVENTS.push(newEvent);
+    saveEvents(EVENTS);
+    syncCompleted(EVENTS);
 
     renderEventsList();
     renderCalendar();
     formBody.classList.remove('open');
 
-    // Reset
     ['f-title','f-client','f-desc','f-date','f-time','f-duration','f-end'].forEach(id => document.getElementById(id).value = '');
   });
 
-  /* ---- Nav hamburger ---- */
   function toggleMenu() {
     const menu = document.getElementById('dropdown-menu');
     const btn  = document.getElementById('hamburger-btn');
@@ -330,7 +365,6 @@
     btn.classList.toggle('active');
   }
 
-  /* ---- Init ---- */
   renderCalendar();
   renderEventsList();
 </script>

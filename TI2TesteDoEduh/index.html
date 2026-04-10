@@ -3,17 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ProFeed</title>
+  <title>Resolve Aqui</title>
   <link rel="stylesheet" href="index.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script src="auth.js"></script>
 </head>
 <body>
 
-  <input type="radio" name="panel" id="tab-home"     checked />
-  <input type="radio" name="panel" id="tab-likes"    />
-  <input type="radio" name="panel" id="tab-messages" />
-  <input type="radio" name="panel" id="tab-history"  />
-  <input type="radio" name="panel" id="tab-profile"  />
+  <input type="radio" name="panel" id="tab-home"      checked />
+  <input type="radio" name="panel" id="tab-likes"     />
+  <input type="radio" name="panel" id="tab-messages"  />
+  <input type="radio" name="panel" id="tab-history"   />
+  <input type="radio" name="panel" id="tab-completed" />
+  <input type="radio" name="panel" id="tab-avaliacoes"/>
+  <input type="radio" name="panel" id="tab-profile"   />
   <input type="checkbox" id="layout-expanded" />
   <input type="checkbox" id="toggle-panel" />
 
@@ -50,6 +53,17 @@
           <line x1="16" y1="17" x2="8" y2="17"/>
         </svg>
       </label>
+      <label for="tab-completed" class="nav-item nav-completed" title="Serviços Concluídos">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </label>
+      <label for="tab-avaliacoes" class="nav-item nav-avaliacoes" title="Avaliações Pendentes" id="nav-avaliacoes-label">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+      </label>
       <label for="tab-profile" class="nav-item nav-profile" title="Perfil">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -75,6 +89,7 @@
 
   <div class="layout">
 
+    <!-- FEED LEFT -->
     <div class="left-panel">
       <div class="feed">
 
@@ -331,7 +346,7 @@
         </div>
       </div>
 
-      <!-- PAINEL: MENSAGENS — abre mensagens.html -->
+      <!-- PAINEL: MENSAGENS -->
       <div class="panel panel-messages">
         <h2 class="panel-title">✉️ Mensagens</h2>
         <a class="list-item msg-link" href="mensagens.html?user=Davi+Alves&img=60&prof=Pedreiro">
@@ -381,6 +396,18 @@
         </div>
       </div>
 
+      <!-- PAINEL: SERVIÇOS CONCLUÍDOS -->
+      <div class="panel panel-completed">
+        <h2 class="panel-title">✅ Serviços Feitos</h2>
+        <div id="completed-list"></div>
+      </div>
+
+      <!-- PAINEL: AVALIAÇÕES PENDENTES -->
+      <div class="panel panel-avaliacoes">
+        <h2 class="panel-title">⭐ Lembretes de Avaliação</h2>
+        <div id="avaliacoes-list"></div>
+      </div>
+
       <!-- PAINEL: PERFIL -->
       <div class="panel panel-profile">
         <h2 class="panel-title">👤 Meu Perfil</h2>
@@ -405,27 +432,67 @@
     </div>
   </div>
 
+  <!-- REVIEW MODAL -->
+  <div class="review-modal-overlay" id="review-modal-overlay">
+    <div class="review-modal-card">
+      <div class="review-modal-header">
+        <span class="review-modal-title">⭐ Avaliar Serviço</span>
+        <button class="review-modal-close" id="review-modal-close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="review-modal-body">
+        <div class="rm-provider-info" id="rm-provider-info"></div>
+        <div class="rm-post-snippet" id="rm-post-snippet"></div>
+
+        <div class="rm-section-label">Sua avaliação</div>
+        <div class="rm-star-picker" id="rm-star-picker">
+          <span class="rm-star" data-v="1">★</span>
+          <span class="rm-star" data-v="2">★</span>
+          <span class="rm-star" data-v="3">★</span>
+          <span class="rm-star" data-v="4">★</span>
+          <span class="rm-star" data-v="5">★</span>
+        </div>
+
+        <div class="rm-form-group">
+          <label>Descreva o serviço</label>
+          <textarea id="rm-text" placeholder="Como foi a experiência? O profissional foi pontual, atencioso?"></textarea>
+        </div>
+
+        <div class="rm-form-group">
+          <label>Foto do serviço <span class="rm-optional">(opcional)</span></label>
+          <input type="text" id="rm-img-url" placeholder="URL da imagem..." />
+          <img id="rm-img-preview" class="rm-img-preview" style="display:none" src="" alt="preview" />
+        </div>
+      </div>
+      <div class="review-modal-footer">
+        <button class="rm-btn-cancel" id="rm-cancel-btn">Cancelar</button>
+        <button class="rm-btn-submit" id="rm-submit-btn"><i class="fa-solid fa-paper-plane"></i> Enviar Avaliação</button>
+      </div>
+    </div>
+  </div>
+
 <script>
+  const COMPLETED_KEY  = 'profeed_completed_services';
+  const REVIEWS_KEY    = 'profeed_pending_reviews';
+  const GIVEN_KEY      = 'profeed_given_reviews';
+  const LEVEL_COLORS   = { facil: "#27ae60", medio: "#f39c12", dificil: "#e74c3c" };
+  const LEVEL_LABELS   = { facil: "Fácil", medio: "Médio", dificil: "Difícil" };
+
+  /* ---- AUTH ---- */
   (function() {
     const user = getUser();
-
-    const authBtn = document.getElementById('nav-auth-btn');
+    const authBtn      = document.getElementById('nav-auth-btn');
     const portfolioLink = document.getElementById('nav-portfolio');
-    const profileName = document.getElementById('profile-name');
+    const profileName  = document.getElementById('profile-name');
     const profileAvatar = document.getElementById('profile-avatar');
-    const tipoBadge = document.getElementById('profile-tipo-badge');
-    const btnVirar = document.getElementById('btn-virar-prestador');
+    const tipoBadge    = document.getElementById('profile-tipo-badge');
+    const btnVirar     = document.getElementById('btn-virar-prestador');
     const btnPortfolio = document.getElementById('btn-meu-portfolio');
 
     if (user) {
       authBtn.textContent = 'Sair';
       authBtn.classList.add('auth-btn-logout');
-
       profileName.textContent = user.nome || user.username;
-      if (user.foto) {
-        profileAvatar.src = user.foto;
-      }
-
+      if (user.foto) profileAvatar.src = user.foto;
       tipoBadge.style.display = 'inline-block';
       if (user.tipo === 'prestador') {
         tipoBadge.textContent = 'Prestador';
@@ -449,12 +516,175 @@
 
   function handleAuthClick() {
     const user = getUser();
-    if (user) {
-      logout();
-    } else {
-      window.location.href = 'login.html';
-    }
+    if (user) { logout(); } else { window.location.href = 'login.html'; }
   }
+
+  /* ---- COMPLETED SERVICES ---- */
+  function renderCompleted() {
+    const container = document.getElementById('completed-list');
+    let completed = [];
+    try { completed = JSON.parse(localStorage.getItem(COMPLETED_KEY)) || []; } catch(e) {}
+
+    if (!completed.length) {
+      container.innerHTML = '<p class="panel-empty-msg">Nenhum serviço concluído ainda. Os serviços com prazo vencido na agenda aparecerão aqui.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    completed.slice().reverse().forEach(ev => {
+      const card = document.createElement('div');
+      card.className = 'completed-card';
+      card.innerHTML = `
+        <div class="completed-card-bar" style="background:${LEVEL_COLORS[ev.level] || '#27ae60'}"></div>
+        <div class="completed-card-body">
+          <div class="completed-card-top">
+            <span class="completed-card-title">${ev.title}</span>
+            <span class="completed-level-badge" style="background:${LEVEL_COLORS[ev.level] || '#27ae60'}">${LEVEL_LABELS[ev.level] || ev.level}</span>
+          </div>
+          <div class="completed-card-meta">
+            <span><i class="fa-solid fa-user-tie"></i> ${ev.client}</span>
+            <span><i class="fa-solid fa-calendar-check"></i> ${formatDate(ev.date)}</span>
+            <span><i class="fa-solid fa-clock"></i> ${ev.time}</span>
+          </div>
+          ${ev.desc ? `<p class="completed-card-desc">${ev.desc}</p>` : ''}
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function formatDate(str) {
+    if (!str) return '';
+    const [y,m,d] = str.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  /* ---- PENDING REVIEWS ---- */
+  let currentReviewId = null;
+  let selectedStars   = 0;
+
+  function renderAvaliacoes() {
+    const container = document.getElementById('avaliacoes-list');
+    let pending = [];
+    try { pending = JSON.parse(localStorage.getItem(REVIEWS_KEY)) || []; } catch(e) {}
+
+    const unreviewed = pending.filter(p => !p.reviewed);
+
+    if (!unreviewed.length) {
+      container.innerHTML = '<p class="panel-empty-msg">Nenhuma avaliação pendente. Quando um prestador marcar você em um post, aparecerá aqui.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    unreviewed.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'aval-card';
+      card.innerHTML = `
+        <div class="aval-card-top">
+          <div class="aval-card-icon"><i class="fa-solid fa-tag"></i></div>
+          <div class="aval-card-info">
+            <span class="aval-card-provider">Você foi marcado por <strong>${item.providerName}</strong></span>
+            <span class="aval-card-date">${item.date}</span>
+          </div>
+        </div>
+        ${item.postImg ? `<img class="aval-post-img" src="${item.postImg}" alt="post">` : ''}
+        ${item.postDesc ? `<p class="aval-post-desc">"${item.postDesc}"</p>` : ''}
+        <button class="aval-avaliar-btn" data-id="${item.id}">
+          <i class="fa-solid fa-star"></i> Avaliar este serviço
+        </button>
+      `;
+      card.querySelector('.aval-avaliar-btn').addEventListener('click', () => openReviewModal(item));
+      container.appendChild(card);
+    });
+  }
+
+  /* ---- REVIEW MODAL ---- */
+  function openReviewModal(item) {
+    currentReviewId = item.id;
+    selectedStars   = 0;
+    updateStarPicker(0);
+
+    document.getElementById('rm-provider-info').innerHTML = `
+      <i class="fa-solid fa-user-circle rm-provider-icon"></i>
+      <div><strong>${item.providerName}</strong><br><span class="rm-provider-sub">Prestador de serviço</span></div>
+    `;
+    document.getElementById('rm-post-snippet').innerHTML = item.postDesc
+      ? `<p class="rm-post-desc">"${item.postDesc}"</p>`
+      : '';
+
+    document.getElementById('rm-text').value = '';
+    document.getElementById('rm-img-url').value = '';
+    document.getElementById('rm-img-preview').style.display = 'none';
+    document.getElementById('review-modal-overlay').classList.add('active');
+  }
+
+  function closeReviewModal() {
+    document.getElementById('review-modal-overlay').classList.remove('active');
+    currentReviewId = null;
+  }
+
+  document.getElementById('review-modal-close').addEventListener('click', closeReviewModal);
+  document.getElementById('rm-cancel-btn').addEventListener('click', closeReviewModal);
+  document.getElementById('review-modal-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('review-modal-overlay')) closeReviewModal();
+  });
+
+  function updateStarPicker(val) {
+    document.querySelectorAll('.rm-star').forEach(s => {
+      s.classList.toggle('active', parseInt(s.dataset.v) <= val);
+    });
+  }
+
+  document.querySelectorAll('.rm-star').forEach(s => {
+    s.addEventListener('click', () => {
+      selectedStars = parseInt(s.dataset.v);
+      updateStarPicker(selectedStars);
+    });
+    s.addEventListener('mouseover', () => updateStarPicker(parseInt(s.dataset.v)));
+    s.addEventListener('mouseout', () => updateStarPicker(selectedStars));
+  });
+
+  document.getElementById('rm-img-url').addEventListener('input', function() {
+    const url = this.value.trim();
+    const preview = document.getElementById('rm-img-preview');
+    preview.src = url;
+    preview.style.display = url ? 'block' : 'none';
+  });
+
+  document.getElementById('rm-submit-btn').addEventListener('click', () => {
+    if (!selectedStars) { alert('Selecione pelo menos 1 estrela.'); return; }
+    const text = document.getElementById('rm-text').value.trim();
+    const img  = document.getElementById('rm-img-url').value.trim();
+    if (!text) { alert('Escreva uma descrição do serviço.'); return; }
+
+    const user = typeof getUser === 'function' ? getUser() : null;
+    const reviewerName = user ? (user.nome || user.username) : 'Contratante';
+    const reviewerImg  = user ? user.foto : null;
+
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+
+    const newReview = { id: Date.now(), reviewerName, reviewerImg, stars: selectedStars, text, img: img || null, date: dateStr };
+
+    let given = [];
+    try { given = JSON.parse(localStorage.getItem(GIVEN_KEY)) || []; } catch(e) {}
+    given.push(newReview);
+    localStorage.setItem(GIVEN_KEY, JSON.stringify(given));
+
+    let pending = [];
+    try { pending = JSON.parse(localStorage.getItem(REVIEWS_KEY)) || []; } catch(e) {}
+    const idx = pending.findIndex(p => p.id === currentReviewId);
+    if (idx !== -1) pending[idx].reviewed = true;
+    localStorage.setItem(REVIEWS_KEY, JSON.stringify(pending));
+
+    closeReviewModal();
+    renderAvaliacoes();
+    alert('Avaliação enviada com sucesso!');
+  });
+
+  /* ---- INIT ---- */
+  renderCompleted();
+  renderAvaliacoes();
 </script>
 </body>
 </html>

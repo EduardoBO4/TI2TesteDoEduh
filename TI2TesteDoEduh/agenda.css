@@ -514,6 +514,14 @@ body {
   padding-top: 12px;
 }
 
+/* ---- PAST EVENT TAG ---- */
+.past-event { opacity: 0.75; }
+.done-tag {
+  display: inline-block; font-size: 9px; font-weight: 700;
+  background: #27ae60; color: #fff; border-radius: 4px;
+  padding: 1px 6px; margin-left: 4px; text-transform: uppercase; vertical-align: middle;
+}
+
 /* ---- SCROLLBAR ---- */
 .events-section::-webkit-scrollbar { width: 4px; }
 .events-section::-webkit-scrollbar-track { background: transparent; }
