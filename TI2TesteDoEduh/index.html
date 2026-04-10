@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resolve Aqui</title>
+  <title>ProFeed</title>
   <link rel="stylesheet" href="index.css" />
+  <script src="auth.js"></script>
 </head>
 <body>
 
@@ -55,6 +56,15 @@
           <circle cx="12" cy="7" r="4"/>
         </svg>
       </label>
+      <a id="nav-portfolio" class="nav-item nav-portfolio" href="portifolio.html" title="Meu Portfólio" style="display:none; text-decoration:none;">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="7" width="20" height="14" rx="2"/>
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+          <line x1="12" y1="12" x2="12" y2="16"/>
+          <line x1="10" y1="14" x2="14" y2="14"/>
+        </svg>
+      </a>
+      <button id="nav-auth-btn" class="nav-auth-btn" onclick="handleAuthClick()" title="Entrar"></button>
       <label for="toggle-panel" class="nav-item nav-toggle-panel" title="Mostrar/Ocultar Painéis">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="9 18 15 12 9 6"/>
@@ -375,18 +385,76 @@
       <div class="panel panel-profile">
         <h2 class="panel-title">👤 Meu Perfil</h2>
         <div class="profile-card">
-          <img class="profile-big-avatar" src="https://i.pravatar.cc/150?img=70" alt="Você">
-          <div class="profile-name">Você</div>
+          <img class="profile-big-avatar" id="profile-avatar" src="https://i.pravatar.cc/150?img=70" alt="Você">
+          <div class="profile-name" id="profile-name">Você</div>
+          <div id="profile-tipo-badge" class="profile-tipo-badge" style="display:none"></div>
           <div class="profile-stats">
             <div><strong>2</strong><span>Curtidos</span></div>
             <div><strong>1</strong><span>Salvos</span></div>
             <div><strong>0</strong><span>Posts</span></div>
           </div>
+          <button id="btn-virar-prestador" class="btn-virar-prestador" onclick="location.href='cadastro-prestador.html'" style="display:none">
+            Quero ser prestador de serviço
+          </button>
+          <button id="btn-meu-portfolio" class="btn-meu-portfolio" onclick="location.href='portifolio.html'" style="display:none">
+            Ver meu portfólio
+          </button>
         </div>
       </div>
 
     </div>
   </div>
 
+<script>
+  (function() {
+    const user = getUser();
+
+    const authBtn = document.getElementById('nav-auth-btn');
+    const portfolioLink = document.getElementById('nav-portfolio');
+    const profileName = document.getElementById('profile-name');
+    const profileAvatar = document.getElementById('profile-avatar');
+    const tipoBadge = document.getElementById('profile-tipo-badge');
+    const btnVirar = document.getElementById('btn-virar-prestador');
+    const btnPortfolio = document.getElementById('btn-meu-portfolio');
+
+    if (user) {
+      authBtn.textContent = 'Sair';
+      authBtn.classList.add('auth-btn-logout');
+
+      profileName.textContent = user.nome || user.username;
+      if (user.foto) {
+        profileAvatar.src = user.foto;
+      }
+
+      tipoBadge.style.display = 'inline-block';
+      if (user.tipo === 'prestador') {
+        tipoBadge.textContent = 'Prestador';
+        tipoBadge.classList.add('badge-prestador');
+        portfolioLink.style.display = 'flex';
+        btnPortfolio.style.display = 'block';
+        btnVirar.style.display = 'none';
+      } else {
+        tipoBadge.textContent = 'Contratante';
+        tipoBadge.classList.add('badge-usuario');
+        portfolioLink.style.display = 'none';
+        btnPortfolio.style.display = 'none';
+        btnVirar.style.display = 'block';
+      }
+    } else {
+      authBtn.textContent = 'Entrar';
+      authBtn.classList.add('auth-btn-login');
+      profileName.textContent = 'Visitante';
+    }
+  })();
+
+  function handleAuthClick() {
+    const user = getUser();
+    if (user) {
+      logout();
+    } else {
+      window.location.href = 'login.html';
+    }
+  }
+</script>
 </body>
 </html>
