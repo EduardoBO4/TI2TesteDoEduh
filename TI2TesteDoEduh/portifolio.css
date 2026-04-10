@@ -150,6 +150,81 @@ body {
 .no-profile-msg { color: #7090c0; text-align: center; margin-top: 60px; font-size: 15px; }
 #no-profile { display: block; }
 
+/* ---- Event preview in portfolio ---- */
+.event-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 6px;
+  border-radius: 8px;
+  transition: background 0.15s;
+  cursor: default;
+}
+.event-preview-item:hover { background: rgba(74,166,255,0.08); }
+
+.event-preview-bar {
+  width: 4px;
+  border-radius: 3px;
+  align-self: stretch;
+  flex-shrink: 0;
+  min-height: 28px;
+}
+
+.event-preview-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.event-preview-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #d0daf0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-preview-meta {
+  font-size: 9px;
+  color: #5a7ab0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.event-preview-badge {
+  font-size: 8px;
+  font-weight: 800;
+  color: #fff;
+  border-radius: 5px;
+  padding: 2px 6px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.ver-agenda-btn {
+  margin-top: 8px;
+  background: none;
+  border: 1px solid #3a5a9a;
+  color: #4da6ff;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.ver-agenda-btn:hover { background: rgba(74,166,255,0.12); border-color: #4da6ff; color: #80c4ff; }
+
 @media (max-width: 560px) {
   body { padding-top: 120px; }
   .hamburger-btn { display: flex; }
