@@ -38,19 +38,49 @@ class _QuizPageState extends State<QuizPage> {
   late Future<List<Fase>> _futurePerguntas;
   List<Fase> _explicacoes = const [];
 
+  /// Reordena as perguntas agrupando por gíria e, dentro de cada gíria,
+  /// seguindo a ordem fixa: significado → impacto → aplicação.
+  /// Garante a ordem correta independentemente de como o backend devolveu.
+  List<Fase> _ordenarPorGiria(List<Fase> perguntas) {
+    const prioridade = {'significado': 0, 'impacto': 1, 'aplicacao': 2};
+
+    final grupos = <String, List<Fase>>{};
+    final ordemGirias = <String>[];
+
+    for (final pergunta in perguntas) {
+      final chave = pergunta.giriaId.toString();
+      if (!grupos.containsKey(chave)) {
+        grupos[chave] = [];
+        ordemGirias.add(chave);
+      }
+      grupos[chave]!.add(pergunta);
+    }
+
+    return ordemGirias.expand((chave) {
+      final grupo = [...grupos[chave]!];
+      grupo.sort((a, b) {
+        final pa = prioridade[a.tipo] ?? 99;
+        final pb = prioridade[b.tipo] ?? 99;
+        return pa.compareTo(pb);
+      });
+      return grupo;
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
     _explicacoes = widget.explicacoesPrecarregadas ?? const [];
     if (widget.perguntasPrecarregadas != null) {
-      _futurePerguntas = Future.value(widget.perguntasPrecarregadas);
+      _futurePerguntas =
+          Future.value(_ordenarPorGiria(widget.perguntasPrecarregadas!));
     } else {
-      _futurePerguntas = MundoService.buscarRodada(
-        widget.nomeMundo,
-      ).then((rodada) {
-        _explicacoes = rodada.fases;
-        return rodada.todasAsPerguntas;
-      });
+      _futurePerguntas = MundoService.buscarRodada(widget.nomeMundo).then(
+        (rodada) {
+          _explicacoes = rodada.fases;
+          return _ordenarPorGiria(rodada.todasAsPerguntas);
+        },
+      );
     }
   }
 
@@ -144,6 +174,7 @@ class _QuizRunnerState extends State<_QuizRunner>
 
   late final AnimationController _feedbackController;
   late final Animation<Offset> _feedbackSlide;
+  late final ScrollController _alternativasController;
 
   // Cores — mesmas do resto do app
   static const Color bgTop = Color(0xFF130A24);
@@ -164,13 +195,15 @@ class _QuizRunnerState extends State<_QuizRunner>
     );
     _feedbackSlide = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
         .animate(
-          CurvedAnimation(parent: _feedbackController, curve: Curves.easeOut),
-        );
+      CurvedAnimation(parent: _feedbackController, curve: Curves.easeOut),
+    );
+    _alternativasController = ScrollController();
   }
 
   @override
   void dispose() {
     _feedbackController.dispose();
+    _alternativasController.dispose();
     super.dispose();
   }
 
@@ -193,12 +226,22 @@ class _QuizRunnerState extends State<_QuizRunner>
     });
 
     _feedbackController.forward(from: 0);
+
+    // Rola até o final para revelar a caixa de impacto_motivo, quando houver.
+    if (fasAtual.isImpacto) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_alternativasController.hasClients) return;
+        _alternativasController.animateTo(
+          _alternativasController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      });
+    }
   }
 
   void _avancar() {
     _feedbackController.reverse().then((_) {
-      // Gatilho de erro: se o jogador errou esta questão, mostramos a tela de
-      // explicação daquela gíria antes de seguir o fluxo (uma vez por gíria).
       final explicacao = _explicacaoDeErroPendente();
       if (explicacao != null) {
         setState(() {
@@ -221,10 +264,24 @@ class _QuizRunnerState extends State<_QuizRunner>
     final idGiria = atual.giriaId.toString();
     if (_explicacoesJaVistas.contains(idGiria)) return null;
 
+    // Tenta casar por giriaId e, como fallback, pelo nome da gíria —
+    // protege contra divergência de tipos (int vs string) entre backend e app.
     for (final e in widget.explicacoes) {
-      if (e.giriaId.toString() == idGiria) return e;
+      if (e.giriaId.toString() == idGiria ||
+          e.giria.trim().toLowerCase() == atual.giria.trim().toLowerCase()) {
+        return e;
+      }
     }
-    return null;
+
+    // Sem explicação dedicada: usa a própria questão de significado da gíria
+    // (que carrega explicacao + exemplo) como tela de revisão.
+    return widget.perguntas.firstWhere(
+      (p) =>
+          p.giriaId.toString() == idGiria &&
+          p.tipo == 'significado' &&
+          p.explicacao.trim().isNotEmpty,
+      orElse: () => atual,
+    );
   }
 
   /// Fecha a tela de explicação e continua exatamente de onde parou.
@@ -290,7 +347,6 @@ class _QuizRunnerState extends State<_QuizRunner>
     final double scale = (size.width / 390).clamp(0.9, 1.25);
     final double heightScale = (size.height / 844).clamp(0.85, 1.35);
 
-    // Feedback de erro: reaproveita exatamente a tela de explicação existente.
     final explicacao = _explicacaoPendente;
     if (explicacao != null) {
       return PopScope(
@@ -435,6 +491,12 @@ class _QuizRunnerState extends State<_QuizRunner>
                     // Lista de alternativas
                     Expanded(
                       child: ListView.separated(
+                        controller: _alternativasController,
+                        padding: EdgeInsets.only(
+                          bottom: _estado == _EstadoResposta.respondido
+                              ? 160 * scale
+                              : 16 * scale,
+                        ),
                         physics: const BouncingScrollPhysics(),
                         shrinkWrap: true,
                         itemCount: fase.alternativas.length,
@@ -443,19 +505,13 @@ class _QuizRunnerState extends State<_QuizRunner>
                           final alt = fase.alternativas[i];
                           return _buildAlternativa(
                             alt,
-                            letra: String.fromCharCode(65 + i), // A, B, C...
+                            letra: String.fromCharCode(65 + i),
                             scale: scale,
                             heightScale: heightScale,
                             respostaCorreta: respostaCorreta,
                           );
                         },
                       ),
-                    ),
-
-                    SizedBox(
-                      height: _estado == _EstadoResposta.respondido
-                          ? 100 * scale
-                          : 16 * scale,
                     ),
                   ],
                 ),
@@ -656,10 +712,12 @@ class _QuizRunnerState extends State<_QuizRunner>
 
     // Caixinha de justificativa do impacto: aparece logo abaixo da alternativa
     // correta, assim que o jogador responde a questão de impacto.
+    // Usa isImpacto (cobre tipo + fallback no texto da pergunta) e só exige
+    // que exista texto em impactoMotivo.
     final fase = widget.perguntas[_indice];
     final bool mostrarMotivo = _estado == _EstadoResposta.respondido &&
         alt.correta &&
-        fase.tipo == 'impacto' &&
+        fase.isImpacto &&
         fase.impactoMotivo.trim().isNotEmpty;
 
     if (!mostrarMotivo) return botao;
@@ -844,8 +902,6 @@ class _ResultadoScreen extends StatelessWidget {
     return vermelho;
   }
 
-  // Emoji, título e mensagem variam de acordo com o aproveitamento —
-  // "Parabéns, Astronauta!" só aparece quando o desempenho foi realmente bom.
   String get _emoji {
     if (_pct >= 0.8) return '🎉';
     if (_pct >= 0.5) return '🚀';
@@ -907,7 +963,6 @@ class _ResultadoScreen extends StatelessWidget {
             SafeArea(
               child: Column(
                 children: [
-                  // ── Cabeçalho: nome do mundo + botão de voltar ao mapa, fixos no topo ──
                   Padding(
                     padding: EdgeInsets.fromLTRB(
                       20 * scale,
@@ -993,7 +1048,6 @@ class _ResultadoScreen extends StatelessWidget {
                     ),
                   ),
 
-                  // ── Conteúdo restante da tela ──
                   Expanded(
                     child: Stack(
                       children: [
@@ -1021,154 +1075,149 @@ class _ResultadoScreen extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                            Center(
-                              child: Text(
-                                _emoji,
-                                style: TextStyle(fontSize: 46 * scale),
-                              ),
-                            ),
-                            SizedBox(height: 14 * heightScale),
-
-                            // ── Título dinâmico, proporcional ao desempenho ──
-                            Text(
-                              _titulo,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.baloo2(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 24 * scale,
-                              ),
-                            ),
-
-                            SizedBox(height: 26 * heightScale),
-
-                            // ── Card "certificado" ──
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 20 * scale,
-                                vertical: 26 * scale,
-                              ),
-                              decoration: BoxDecoration(
-                                color: cardColor,
-                                borderRadius: BorderRadius.circular(26),
-                                border: Border.all(
-                                  color: _corResultado.withOpacity(0.35),
-                                  width: 1.4,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _corResultado.withOpacity(0.18),
-                                    blurRadius: 26,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                children: [
-                                  // ── Placar de acertos e erros ──
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      _buildPlacarItem(
-                                        icon: Icons.check_circle_rounded,
-                                        cor: verde,
-                                        valor: acertos,
-                                        label: 'Acertos',
-                                        scale: scale,
-                                      ),
-                                      SizedBox(width: 18 * scale),
-                                      Container(
-                                        width: 1,
-                                        height: 44 * scale,
-                                        color: Colors.white12,
-                                      ),
-                                      SizedBox(width: 18 * scale),
-                                      _buildPlacarItem(
-                                        icon: Icons.cancel_rounded,
-                                        cor: vermelho,
-                                        valor: _erros,
-                                        label: 'Erros',
-                                        scale: scale,
-                                      ),
-                                    ],
-                                  ),
-
-                                  SizedBox(height: 16 * scale),
-
-                                  // ── Barra de aproveitamento ──
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: LinearProgressIndicator(
-                                      value: _pct,
-                                      minHeight: 8,
-                                      backgroundColor: Colors.white10,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        _corResultado,
-                                      ),
+                                  Center(
+                                    child: Text(
+                                      _emoji,
+                                      style: TextStyle(fontSize: 46 * scale),
                                     ),
                                   ),
-                                  SizedBox(height: 8 * scale),
+                                  SizedBox(height: 14 * heightScale),
+
                                   Text(
-                                    '${(_pct * 100).round()}% de aproveitamento',
-                                    style: TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 12 * scale,
+                                    _titulo,
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.baloo2(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 24 * scale,
                                     ),
                                   ),
 
-                                  SizedBox(height: 14 * scale),
+                                  SizedBox(height: 26 * heightScale),
 
-                                  // ── Estrelas de desempenho ──
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: List.generate(5, (i) {
-                                      final preenchida = i < _estrelas;
-                                      return Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 2 * scale,
+                                  Container(
+                                    width: double.infinity,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 20 * scale,
+                                      vertical: 26 * scale,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: cardColor,
+                                      borderRadius: BorderRadius.circular(26),
+                                      border: Border.all(
+                                        color: _corResultado.withOpacity(0.35),
+                                        width: 1.4,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _corResultado.withOpacity(0.18),
+                                          blurRadius: 26,
+                                          spreadRadius: 2,
                                         ),
-                                        child: Icon(
-                                          preenchida
-                                              ? Icons.star_rounded
-                                              : Icons.star_border_rounded,
-                                          color: preenchida
-                                              ? verdeAgua
-                                              : Colors.white24,
-                                          size: 22 * scale,
+                                      ],
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            _buildPlacarItem(
+                                              icon: Icons.check_circle_rounded,
+                                              cor: verde,
+                                              valor: acertos,
+                                              label: 'Acertos',
+                                              scale: scale,
+                                            ),
+                                            SizedBox(width: 18 * scale),
+                                            Container(
+                                              width: 1,
+                                              height: 44 * scale,
+                                              color: Colors.white12,
+                                            ),
+                                            SizedBox(width: 18 * scale),
+                                            _buildPlacarItem(
+                                              icon: Icons.cancel_rounded,
+                                              cor: vermelho,
+                                              valor: _erros,
+                                              label: 'Erros',
+                                              scale: scale,
+                                            ),
+                                          ],
                                         ),
-                                      );
-                                    }),
+
+                                        SizedBox(height: 16 * scale),
+
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(10),
+                                          child: LinearProgressIndicator(
+                                            value: _pct,
+                                            minHeight: 8,
+                                            backgroundColor: Colors.white10,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              _corResultado,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(height: 8 * scale),
+                                        Text(
+                                          '${(_pct * 100).round()}% de aproveitamento',
+                                          style: TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 12 * scale,
+                                          ),
+                                        ),
+
+                                        SizedBox(height: 14 * scale),
+
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: List.generate(5, (i) {
+                                            final preenchida = i < _estrelas;
+                                            return Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 2 * scale,
+                                              ),
+                                              child: Icon(
+                                                preenchida
+                                                    ? Icons.star_rounded
+                                                    : Icons.star_border_rounded,
+                                                color: preenchida
+                                                    ? verdeAgua
+                                                    : Colors.white24,
+                                                size: 22 * scale,
+                                              ),
+                                            );
+                                          }),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  SizedBox(height: 20 * heightScale),
+
+                                  Text(
+                                    _mensagem,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13.5 * scale,
+                                      height: 1.4,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-
-                            SizedBox(height: 20 * heightScale),
-
-                            Text(
-                              _mensagem,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13.5 * scale,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
     );
   }
 
