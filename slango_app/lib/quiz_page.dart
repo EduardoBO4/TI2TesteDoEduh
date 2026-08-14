@@ -169,9 +169,6 @@ class _QuizRunnerState extends State<_QuizRunner>
   /// Explicação pendente (tela de lição exibida como feedback de erro).
   Fase? _explicacaoPendente;
 
-  /// Gírias cuja explicação já foi exibida — evita repetir a mesma tela.
-  final Set<String> _explicacoesJaVistas = {};
-
   late final AnimationController _feedbackController;
   late final Animation<Offset> _feedbackSlide;
   late final ScrollController _alternativasController;
@@ -245,7 +242,6 @@ class _QuizRunnerState extends State<_QuizRunner>
       final explicacao = _explicacaoDeErroPendente();
       if (explicacao != null) {
         setState(() {
-          _explicacoesJaVistas.add(explicacao.giriaId.toString());
           _explicacaoPendente = explicacao;
         });
         return;
@@ -254,15 +250,15 @@ class _QuizRunnerState extends State<_QuizRunner>
     });
   }
 
-  /// Retorna a explicação da gíria atual quando a resposta foi errada
-  /// e essa explicação ainda não foi mostrada nesta rodada.
+  /// Retorna a explicação da gíria atual sempre que a resposta foi errada.
+  /// A tela é exibida a cada erro — inclusive quando a mesma gíria é
+  /// respondida errado mais de uma vez (Significado, Impacto ou Aplicação).
   Fase? _explicacaoDeErroPendente() {
     final atual = widget.perguntas[_indice];
     final correta = atual.alternativas.firstWhere((a) => a.correta).texto;
     if (_selecionada == correta) return null;
 
     final idGiria = atual.giriaId.toString();
-    if (_explicacoesJaVistas.contains(idGiria)) return null;
 
     // Tenta casar por giriaId e, como fallback, pelo nome da gíria —
     // protege contra divergência de tipos (int vs string) entre backend e app.
@@ -488,9 +484,9 @@ class _QuizRunnerState extends State<_QuizRunner>
                     ),
                     SizedBox(height: 20 * heightScale),
 
-                    // Lista de alternativas
+                    // Lista de alternativas + caixinha de impacto_motivo
                     Expanded(
-                      child: ListView.separated(
+                      child: SingleChildScrollView(
                         controller: _alternativasController,
                         padding: EdgeInsets.only(
                           bottom: _estado == _EstadoResposta.respondido
@@ -498,19 +494,33 @@ class _QuizRunnerState extends State<_QuizRunner>
                               : 16 * scale,
                         ),
                         physics: const BouncingScrollPhysics(),
-                        shrinkWrap: true,
-                        itemCount: fase.alternativas.length,
-                        separatorBuilder: (_, __) => SizedBox(height: 12 * scale),
-                        itemBuilder: (_, i) {
-                          final alt = fase.alternativas[i];
-                          return _buildAlternativa(
-                            alt,
-                            letra: String.fromCharCode(65 + i),
-                            scale: scale,
-                            heightScale: heightScale,
-                            respostaCorreta: respostaCorreta,
-                          );
-                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (int i = 0;
+                                i < fase.alternativas.length;
+                                i++) ...[
+                              if (i > 0) SizedBox(height: 12 * scale),
+                              _buildAlternativa(
+                                fase.alternativas[i],
+                                letra: String.fromCharCode(65 + i),
+                                scale: scale,
+                                heightScale: heightScale,
+                                respostaCorreta: respostaCorreta,
+                              ),
+                            ],
+                            if (_estado == _EstadoResposta.respondido &&
+                                fase.isImpacto &&
+                                fase.impactoMotivo.trim().isNotEmpty) ...[
+                              SizedBox(height: 16 * scale),
+                              _buildImpactoMotivoCard(
+                                fase.impactoMotivo,
+                                scale,
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -710,64 +720,62 @@ class _QuizRunnerState extends State<_QuizRunner>
       ),
     );
 
-    // Caixinha de justificativa do impacto: aparece logo abaixo da alternativa
-    // correta, assim que o jogador responde a questão de impacto.
-    // Usa isImpacto (cobre tipo + fallback no texto da pergunta) e só exige
-    // que exista texto em impactoMotivo.
-    final fase = widget.perguntas[_indice];
-    final bool mostrarMotivo = _estado == _EstadoResposta.respondido &&
-        alt.correta &&
-        fase.isImpacto &&
-        fase.impactoMotivo.trim().isNotEmpty;
+    return botao;
+  }
 
-    if (!mostrarMotivo) return botao;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        botao,
-        SizedBox(height: 8 * scale),
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.all(14 * scale),
-          decoration: BoxDecoration(
-            color: cardDark,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: verde.withOpacity(0.35)),
+  // ─── Caixinha "Por que esse impacto?" — segue o Design System dos
+  // demais componentes de feedback (cardDark + borda roxo claro + tipografia).
+  // Aparece uma única vez, abaixo das alternativas, sempre que a questão
+  // de impacto é respondida (acertando ou errando).
+  Widget _buildImpactoMotivoCard(String motivo, double scale) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(14 * scale),
+      decoration: BoxDecoration(
+        color: cardDark,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: roxoClaro.withOpacity(0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: roxo.withOpacity(0.12),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Icon(Icons.lightbulb_outline_rounded,
-                      color: roxoClaro, size: 16 * scale),
-                  SizedBox(width: 6 * scale),
-                  Text(
-                    'Por que esse impacto?',
-                    style: TextStyle(
-                      color: roxoClaro,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13 * scale,
-                    ),
-                  ),
-                ],
+              Icon(
+                Icons.lightbulb_outline_rounded,
+                color: roxoClaro,
+                size: 16 * scale,
               ),
-              SizedBox(height: 6 * scale),
+              SizedBox(width: 6 * scale),
               Text(
-                fase.impactoMotivo,
+                'Por que esse impacto?',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13.5 * scale,
-                  height: 1.35,
+                  color: roxoClaro,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13 * scale,
                 ),
               ),
             ],
           ),
-        ),
-      ],
+          SizedBox(height: 6 * scale),
+          Text(
+            motivo,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13.5 * scale,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
