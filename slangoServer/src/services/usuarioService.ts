@@ -55,6 +55,11 @@ export async function criarUsuario(dados: DadosCriacaoUsuario): Promise<UsuarioP
 
     const senhaHash = await bcrypt.hash(dados.Senha, SALT_ROUNDS);
 
+    const validacaoData  = dataNascimentoValida(dados.Data);
+    if (!validacaoData.valida) {
+        throw new Error(validacaoData.erro);
+    }
+
     const { data, error } = await supabase
         .from('User')
         .insert([
@@ -114,10 +119,17 @@ export async function atualizarUsuario(id: number, dados: DadosAtualizacaoUsuari
     if (dados.Nome !== undefined) camposParaAtualizar.Nome = dados.Nome;
     if (dados.Email !== undefined) camposParaAtualizar.Email = dados.Email;
     if (dados.Responsavel !== undefined) camposParaAtualizar.Responsavel = dados.Responsavel;
-    if (dados.Data !== undefined) camposParaAtualizar.Data = dados.Data;
+    if (dados.Data !== undefined) {
+        const validacaoData = dataNascimentoValida(dados.Data);
+        if (!validacaoData.valida) {
+            throw new Error(validacaoData.erro);
+        }
+        camposParaAtualizar.Data = dados.Data;
+    }
     if (dados.perguntaSeguranca !== undefined) camposParaAtualizar.perguntaSeguranca = dados.perguntaSeguranca;
     if (dados.respostaSeguranca !== undefined) camposParaAtualizar.respostaSeguranca = dados.respostaSeguranca;
     if (dados.Senha) camposParaAtualizar.Senha = await bcrypt.hash(dados.Senha, SALT_ROUNDS);
+
 
     const { data, error } = await supabase
         .from('User')
@@ -172,4 +184,18 @@ export async function validarCredenciais(Email: string, senhaDigitada: string): 
     if (!senhaCorreta) return null;
 
     return removerSenha(usuario);
+}
+
+export async function obterNomeUsuarioOuNull(idUsuario: number): Promise<string | null> {
+    const { data, error } = await supabase
+        .from('User')
+        .select('Nome')
+        .eq('id', idUsuario)
+        .single();
+
+    if (error || !data) {
+        return null;
+    }
+
+    return data.Nome ?? null;
 }

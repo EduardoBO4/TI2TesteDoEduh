@@ -34,8 +34,21 @@ interface EstadoMundo {
     indiceAtual: number;
 }
 
-// Chave é `${idUsuario}_${nomeDoMundo}` — cada usuário tem seu próprio baralho
 const estadoDosMundos: Record<string, EstadoMundo> = {};
+
+function extrairGiriasDoMundo(mundoData: any): Girias[] {
+    if (Array.isArray(mundoData)) {
+        return mundoData as Girias[];
+    }
+    if (mundoData && typeof mundoData === 'object') {
+        for (const valor of Object.values(mundoData)) {
+            if (Array.isArray(valor)) {
+                return valor as Girias[];
+            }
+        }
+    }
+    return [];
+}
 
 // ──────────────────────────────────────────────────────────────
 // 1. FUNÇÕES AUXILIARES DE EMBARALHAMENTO
@@ -220,8 +233,7 @@ export const prepararRodadaAleatoria = async (nomeDoMundo: string, idUsuario: nu
         throw new Error('Mundo não encontrado!');
     }
 
-    const chave = Object.keys(mundo)[0];
-    const todasAsGiriasDoMundo = (mundo as any)[chave] as Girias[];
+    const todasAsGiriasDoMundo = extrairGiriasDoMundo(mundo);
 
     const tituloDoMundo =
         `Mundo ${nomeDoMundo.charAt(0).toUpperCase()}${nomeDoMundo.slice(1)}`;
@@ -235,13 +247,24 @@ export const prepararRodadaAleatoria = async (nomeDoMundo: string, idUsuario: nu
         ? await buscarGiriasAprendidas(idMundoNumerico, idUsuario)
         : [];
 
+    // A partir de 10% de gírias aprendidas nesse mundo, elas voltam a
+    // entrar no sorteio normal (chance de reaparecer como revisão), em vez
+    // de ficarem sempre excluídas. Abaixo de 10%, mantém o comportamento
+    // atual (foco total em gírias novas).
+    const totalGiriasDoMundo = todasAsGiriasDoMundo.length;
+    const percentualAprendido = totalGiriasDoMundo > 0
+        ? giriasJaAprendidas.length / totalGiriasDoMundo
+        : 0;
+
+    const giriasParaExcluir = percentualAprendido >= 0.10 ? [] : giriasJaAprendidas;
+
     // Sorteia 3 gírias únicas
     const chaveEstado = `${idUsuario}_${nomeDoMundo}`;
     const tresPalavras = puxarProximasGiriasUnicas(
         chaveEstado,
         todasAsGiriasDoMundo,
         3,
-        giriasJaAprendidas // Agora isso é um array de IDs
+        giriasParaExcluir // Vazio a partir de 10% aprendido, senão os IDs já aprendidos
     );
 
     // Gera as perguntas das 3 fases sobre as mesmas 3 gírias
@@ -330,11 +353,79 @@ export async function listarMundosComProgresso(
     return resultados;
 }
 
+/**
+ * Retorna, com nome e significado, as gírias que o usuário JÁ aprendeu
+ * (≥80% de acerto em alguma rodada) num mundo específico. Base pra uma
+ * tela de "dicionário pessoal" / revisão.
+ */
+export async function listarGiriasAprendidasDoMundo(
+    nomeDoMundo: string,
+    idUsuario: number
+): Promise<Array<{
+    id: number | string;
+    nome: string;
+    significado: string;
+    exemplo: string;
+    classe?: string;
+    impacto?: string;
+}>> {
+    const mundo = mundos[nomeDoMundo as keyof typeof mundos];
+    if (!mundo) {
+        throw new Error('Mundo não encontrado!');
+    }
+
+    const todasAsGiriasDoMundo = extrairGiriasDoMundo(mundo);
+
+    const idMundoNumerico = await buscarIdMundoPorNome(nomeDoMundo);
+    const idsAprendidos = idMundoNumerico !== null
+        ? await buscarGiriasAprendidas(idMundoNumerico, idUsuario)
+        : [];
+
+    const idsAprendidosSet = new Set(idsAprendidos.map(String));
+
+    return todasAsGiriasDoMundo
+        .filter((giria) => idsAprendidosSet.has(String(giria.id)))
+        .map((giria) => ({
+            id: giria.id,
+            nome: giria.nome,
+            significado: giria.significado,
+            exemplo: giria.exemplo_correto,
+            classe: giria.classe_gramatical ?? (giria as any).classe,
+            impacto: giria.impacto,
+        }));
+}
+
+/**
+ * Mesma coisa, mas pra TODOS os mundos de uma vez, agrupado por mundo.
+ * Útil pra montar a tela geral de "gírias aprendidas" sem precisar de
+ * uma chamada por mundo no front.
+ */
+export async function listarGiriasAprendidasPorTodosMundos(
+    idUsuario: number
+): Promise<Array<{
+    mundo: string;
+    girias: Array<{
+        id: number | string;
+        nome: string;
+        significado: string;
+        exemplo: string;
+        classe?: string;
+        impacto?: string;
+    }>;
+}>> {
+    const nomesDosMundos = Object.keys(mundos);
+
+    return Promise.all(
+        nomesDosMundos.map(async (nome) => ({
+            mundo: nome,
+            girias: await listarGiriasAprendidasDoMundo(nome, idUsuario),
+        }))
+    );
+}
+
 export function contarGiriasPorMundos(): Record<string, number> {
     return Object.entries(mundos).reduce((acumulador, [nome, mundoData]) => {
-        const chaves = Object.keys(mundoData);
-        const girias = chaves.length > 0 ? (mundoData as any)[chaves[0]] : [];
-        acumulador[nome] = Array.isArray(girias) ? girias.length : 0;
+        acumulador[nome] = extrairGiriasDoMundo(mundoData).length;
         return acumulador;
     }, {} as Record<string, number>);
 }
