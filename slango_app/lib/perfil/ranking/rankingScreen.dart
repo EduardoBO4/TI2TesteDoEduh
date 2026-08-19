@@ -2,8 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../cores.dart';
 import '../texto.dart';
+import '../widgets/moldura_rank.dart';
 import '../../final/Particulas.dart';
 import '../../service/rankService.dart';
+
+String formatarTempo(int ms) {
+  final minutos = ms ~/ 60000;
+  final segundos = (ms % 60000) ~/ 1000;
+  final segundosStr = segundos.toString().padLeft(2, '0');
+  return '$minutos:$segundosStr';
+}
 
 class RankingScreen extends StatefulWidget {
   final String? nomeUsuarioAtual;
@@ -21,6 +29,7 @@ class RankingScreen extends StatefulWidget {
 
 class _RankingScreenState extends State<RankingScreen> {
   late Future<List<ItemRanking>> _rankingFuture;
+  late Future<PosicaoUsuario> _minhaPosicaoFuture;
 
   @override
   void initState() {
@@ -31,6 +40,7 @@ class _RankingScreenState extends State<RankingScreen> {
   void _carregarRanking() {
     setState(() {
       _rankingFuture = RankingService.buscarRankingGlobal();
+      _minhaPosicaoFuture = RankingService.buscarMinhaPosicao();
     });
   }
 
@@ -45,6 +55,7 @@ class _RankingScreenState extends State<RankingScreen> {
           child: Column(
             children: [
               _buildHeader(context, scale),
+              _buildMinhaPosicao(scale),
               Expanded(
                 child: FutureBuilder<List<ItemRanking>>(
                   future: _rankingFuture,
@@ -156,6 +167,104 @@ class _RankingScreenState extends State<RankingScreen> {
     );
   }
 
+  /// Card fixo (fora da lista) com a posição e o melhor tempo do usuário
+  /// logado, independente de ele aparecer ou não no top 500 exibido abaixo.
+  Widget _buildMinhaPosicao(double scale) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16 * scale, 0, 16 * scale, 12 * scale),
+      child: FutureBuilder<PosicaoUsuario>(
+        future: _minhaPosicaoFuture,
+        builder: (context, snapshot) {
+          // Enquanto carrega ou se der erro, some silenciosamente —
+          // o resto da tela (ranking geral) já tem seus próprios estados.
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Container(
+              padding: EdgeInsets.symmetric(vertical: 14 * scale, horizontal: 16 * scale),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: 18 * scale,
+                  height: 18 * scale,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.cyan,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return const SizedBox.shrink();
+          }
+
+          final minhaPosicao = snapshot.data;
+          if (minhaPosicao == null || minhaPosicao.posicao == null) {
+            return Container(
+              padding: EdgeInsets.symmetric(vertical: 12 * scale, horizontal: 16 * scale),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF9D7FFF).withOpacity(0.4)),
+              ),
+              child: Text(
+                'Você ainda não tem um tempo registrado no ranking.',
+                textAlign: TextAlign.center,
+                style: AppText.cardSubtitulo(scale),
+              ),
+            );
+          }
+
+          return Container(
+            padding: EdgeInsets.symmetric(vertical: 12 * scale, horizontal: 16 * scale),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.cyan, width: 1.4),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.cyan.withOpacity(0.3),
+                  blurRadius: 14,
+                  spreadRadius: 0.5,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.person_pin_circle, color: AppColors.cyan, size: 22 * scale),
+                SizedBox(width: 10 * scale),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sua posição: ${minhaPosicao.posicao}° de ${minhaPosicao.totalJogadores}',
+                        style: AppText.cardTitulo(scale).copyWith(
+                          fontSize: 13 * scale,
+                          color: AppColors.cyan,
+                        ),
+                      ),
+                      SizedBox(height: 2 * scale),
+                      Text(
+                        minhaPosicao.melhorTempoMs != null
+                            ? 'Seu melhor tempo: ${formatarTempo(minhaPosicao.melhorTempoMs!)}'
+                            : 'Você ainda não completou uma rodada cronometrada.',
+                        style: AppText.cardSubtitulo(scale).copyWith(fontSize: 11 * scale),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildPodio(
     List<ItemRanking> top3,
     double scale,
@@ -213,7 +322,7 @@ class _RankingScreenState extends State<RankingScreen> {
     final corBorda = ehVoce ? AppColors.cyan : corMedalha;
     final tamanhoAvatar = posicao == 1 ? 64.0 : 52.0;
 
-    final avatarAsset = 'assets/images/astronauta_${(item.idUsuario % 8) + 1}.png';
+    final avatarAsset = 'images/astronauta_${(item.idUsuario % 8) + 1}.png';
     final nomeExibicao = item.nomeUsuario;
 
     return SizedBox(
@@ -272,6 +381,25 @@ class _RankingScreenState extends State<RankingScreen> {
                   ),
                 ),
               ),
+              // ─── MOLDURA DE RANK (1º, 2º ou 3º lugar) ───
+              // Fica em volta do avatar do pódio, sem cobrir o rosto.
+              // Renderizada antes do selo de posição para o número ficar visível.
+              if (MolduraRank.caminhoParaPosicao(posicao) != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Transform.scale(
+                      // <-- AJUSTE AQUI A ESCALA/TAMANHO DA BORDA DO PÓDIO
+                      scale: 2.0,
+                      child: Image.asset(
+                        MolduraRank.caminhoParaPosicao(posicao)!,
+                        // <-- AJUSTE AQUI A LARGURA/ALTURA DA MOLDURA DO PÓDIO
+                        width: tamanhoAvatar * scale,
+                        height: tamanhoAvatar * scale,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 bottom: -6 * scale,
                 child: Container(
@@ -308,7 +436,7 @@ class _RankingScreenState extends State<RankingScreen> {
           ),
           SizedBox(height: 2 * scale),
           Text(
-            '${item.pontuacao} pts',
+            formatarTempo(item.melhorTempoMs),
             style: AppText.cardSubtitulo(scale).copyWith(fontSize: 11 * scale),
           ),
           SizedBox(height: 6 * scale),
@@ -353,7 +481,7 @@ class _RankingScreenState extends State<RankingScreen> {
     int? idUsuarioAtual,
   ) {
     final ehVoce = item.idUsuario == idUsuarioAtual;
-    final avatarAsset = 'assets/images/astronauta_${(item.idUsuario % 8) + 1}.png';
+    final avatarAsset = 'images/astronauta_${(item.idUsuario % 8) + 1}.png';
     final nomeExibicao = item.nomeUsuario;
 
     return Container(
@@ -463,12 +591,27 @@ class _RankingScreenState extends State<RankingScreen> {
             ),
           ),
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.star, color: AppColors.cyan, size: 16 * scale),
-              SizedBox(width: 4 * scale),
-              Text(
-                '${item.pontuacao}',
-                style: AppText.numero(scale).copyWith(fontSize: 16 * scale),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star, color: AppColors.cyan, size: 16 * scale),
+                      SizedBox(width: 4 * scale),
+                      Text(
+                        '${item.pontuacao}',
+                        style: AppText.numero(scale).copyWith(fontSize: 16 * scale),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    formatarTempo(item.melhorTempoMs),
+                    style: AppText.cardSubtitulo(scale).copyWith(fontSize: 10 * scale),
+                  ),
+                ],
               ),
             ],
           ),

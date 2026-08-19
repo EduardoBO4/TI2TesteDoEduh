@@ -47,9 +47,9 @@ export interface Usuario {
   id: number;
   Nome: string;
   Email: string;
+  Senha: string;
   Responsavel: boolean;
   Administrador: boolean;
-  Senha: string;
   Data: string; // ou Date, dependendo de como o driver do banco devolve
   perguntaSeguranca: string;
   respostaSeguranca: string;
